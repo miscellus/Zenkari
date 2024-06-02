@@ -1,3 +1,4 @@
 zenkari
 compile_commands.json
 .cache/
+*.exe
