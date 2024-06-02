@@ -616,12 +616,159 @@ void UpdateLitTiles(Level level)
 	}
 }
 
-void HandleInput(Level level, Editor *editor)
+size_t GetSafeLevelStringSize(Level level)
+{
+	const size_t size_for_width = 12;
+	const size_t size_for_height = 12;
+
+	return sizeof(char) * (
+		size_for_width + 1 +
+		size_for_height + 1 +
+		level.tileCountY * (level.tileCountX + 1) + 1);
+}
+
+size_t SaveLevelToString(Level level, char *outputBuffer, size_t outputBufferSize)
+{
+	char *at = outputBuffer;
+	char *end = outputBuffer + outputBufferSize;
+
+	at += snprintf(at, (end - at), "%d\n%d\n", level.tileCountX, level.tileCountY);
+
+	for (int tileY = 0; tileY < level.tileCountY; ++tileY)
+	{
+		for (int tileX = 0; tileX < level.tileCountX; ++tileX)
+		{
+			char c = '?';
+			Tile tile = *GetTile(level, tileX, tileY);
+			switch (tile.kind)
+			{
+				case TILE_WALL:
+				{
+					if (tile.lampRequirement >= 0)
+					{
+						c = tile.lampRequirement | '0';
+					}
+					else
+					{
+						c = '#';
+					}
+				} break;
+
+				case TILE_LAMP: c = 'L'; break;
+
+				case TILE_EMPTY:
+				case TILE_LIT: c = '.'; break;
+				default:
+					break;
+			}
+
+			at += snprintf(at, (end - at), "%c", c);
+		}
+		at += snprintf(at, (end - at), "\n");
+	}
+	at += snprintf(at, (end - at), "%c", '\0');
+
+	return (size_t)(at - outputBuffer);
+}
+
+void EatWhitespace(char **at, char *end)
+{
+	while (*at < end && **at != '\0' && **at <= ' ') ++*at;
+}
+
+bool TryLoadLevelFromString(const char *buffer, size_t bufferSize, Level *outLevel)
+{
+	Level level = {0};
+
+	char *at = (char *)buffer;
+	char *end = at + bufferSize;
+
+	char *next_at;
+	level.tileCountX = strtol(at, &next_at, 10);
+	if (at == next_at) return false;
+	at = next_at;
+	EatWhitespace(&at, end);
+	level.tileCountY = strtol(at, &next_at, 10);
+	if (at == next_at) return false;
+	at = next_at;
+	EatWhitespace(&at, end);
+	if (at >= end) return false;
+
+	size_t allocAmount = sizeof(*level.tiles) * level.tileCountX * level.tileCountX;
+	level.tiles = (Tile *)malloc(allocAmount);
+	memset(level.tiles, 0, allocAmount);
+
+	for (int tileY = 0; tileY < level.tileCountY; ++tileY)
+	{
+		for (int tileX = 0; tileX < level.tileCountX; ++tileX)
+		{
+			if (at >= end) goto ErrorReturn;
+
+			char c = *at;
+			Tile *tile = GetTile(level, tileX, tileY);
+			switch (c)
+			{
+				case '#':
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				{
+					tile->kind = TILE_WALL;
+					tile->lampRequirement = (c == '#') ? -1 : c - '0';
+				} break;
+
+				case 'L': tile->kind = TILE_LAMP; break;
+
+				case '.': tile->kind = TILE_EMPTY; break;
+
+				default:
+					goto ErrorReturn;
+			}
+
+			++at;
+		}
+		EatWhitespace(&at, end);
+	}
+
+	*outLevel = level;
+	return true;
+
+ErrorReturn:
+	free(level.tiles);
+	return false;
+}
+
+
+Level HandleInput(Level level, Editor *editor)
 {
 	// Zoom based on mouse wheel
 	float wheel = GetMouseWheelMove();
 	Vector2 mousePosition = GetMousePosition();
 	Vector2 mouseDifference = Vector2Subtract(mousePosition, editor->previousMousePosition);
+
+	if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL))
+	{
+		if (IsKeyPressed(KEY_C))
+		{
+			size_t bufferSize = GetSafeLevelStringSize(level);
+			char *buffer = malloc(bufferSize);
+			SaveLevelToString(level, buffer, bufferSize);
+			SetClipboardText(buffer);
+		}
+
+		if (IsKeyPressed(KEY_V))
+		{
+			const char *levelString = GetClipboardText();
+			int levelStringLength = strlen(levelString);
+
+			if (TryLoadLevelFromString(levelString, levelStringLength, &level))
+			{
+				UpdateLitTiles(level);
+			}
+		}
+	}
 
 	if (IsKeyPressed(KEY_TAB))
 	{
@@ -748,6 +895,7 @@ void HandleInput(Level level, Editor *editor)
 	}
 
 	editor->previousMousePosition = mousePosition;
+	return level;
 }
 
 Vector2 GetViewportCenter()
@@ -770,10 +918,10 @@ void ReadjustViewport(Editor *editor)
 	}
 }
 
-void Update(Level level, Editor *editor)
+Level Update(Level level, Editor *editor)
 {
 	ReadjustViewport(editor);
-	HandleInput(level, editor);
+	return HandleInput(level, editor);
 }
 
 float GetLevelWidth(Level level)
@@ -825,7 +973,7 @@ int main(void)
 
 	while (!WindowShouldClose())
 	{
-		Update(level, &editor);
+		level = Update(level, &editor);
 		BeginDrawing();
 		Draw(level, &editor);
 		EndDrawing();
