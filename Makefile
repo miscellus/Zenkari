@@ -54,10 +54,10 @@ endif
 
 CFLAGS += -Wall -Wextra -pedantic
 CFLAGS += -std=c99
-CFLAGS += -O0 -ggdb
-CFLAGS += -I ./raylib/src
+CFLAGS += -O0 -g3 -ggdb
+CFLAGS += -I ./src -I ./raylib/src
 CFLAGS += -DPLATFORM_OS=$(PLATFORM_OS)
 CFLAGS += -DPLATFORM_ARCHITECTURE=$(PLATFORM_ARCHITECTURE)
 
-zenkari: zenkari.c libraylib.a
-	$(CC) $(CFLAGS) -o zenkari zenkari.c $(LDFLAGS)
+zenkari: src/zenkari.c libraylib.a
+	$(CC) $(CFLAGS) -o zenkari src/zenkari.c $(LDFLAGS)

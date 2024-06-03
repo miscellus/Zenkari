@@ -7,7 +7,7 @@
 #include <raylib.h>
 #include <stdlib.h>
 
-#define TILE_SIZE 48
+#define TILE_SIZE 64
 
 typedef enum TileKind
 {
@@ -61,6 +61,7 @@ typedef enum Mode
 typedef struct Editor
 {
 	Mode mode;
+	Level level;
 	Tile tileToDraw;
 	Camera2D camera;
 	Rectangle view;
@@ -304,12 +305,17 @@ bool GetLampRequirementViolations(Level level, Violations *violations)
 
 			if (lampsNeeded != 0)
 			{
+				if (violations == NULL)
+				{
+					return true;
+				}
+
+				foundViolation = true;
 				AddViolation(violations, CLITERAL(Violation){
 					.kind = VIOLATION_LAMP_REQUIREMENT,
 					.tileX = tileX,
 					.tileY = tileY,
 				});
-				foundViolation = true;
 			}
 		}
 	}
@@ -338,6 +344,11 @@ bool GetLampLitByOtherLampViolations(Level level, Violations *violations)
 				checkTile = GetTile(level, checkX, tileY);
 				if (checkTile->kind == TILE_LAMP)
 				{
+					if (violations == NULL)
+					{
+						return true;
+					}
+
 					foundViolation = true;
 					AddViolation(violations, CLITERAL(Violation){
 						.kind = VIOLATION_LAMP_LIT_BY_OTHER_LAMP,
@@ -364,6 +375,11 @@ bool GetLampLitByOtherLampViolations(Level level, Violations *violations)
 				checkTile = GetTile(level, tileX, checkY);
 				if (checkTile->kind == TILE_LAMP)
 				{
+					if (violations == NULL)
+					{
+						return true;
+					}
+
 					foundViolation = true;
 					AddViolation(violations, CLITERAL(Violation){
 						.kind = VIOLATION_LAMP_LIT_BY_OTHER_LAMP,
@@ -405,6 +421,11 @@ bool GetViolations(Level level, Violations *violations)
 	return foundViolation;
 }
 
+bool HasViolations(Level level)
+{
+	return GetViolations(level, NULL);
+}
+
 Vector2 WorldCoordinateFromTile(int tileX, int tileY)
 {
 	return (Vector2){
@@ -426,7 +447,7 @@ void DrawViolations(Violations *violations)
 	}
 }
 
-bool IsPuzzleSolved(Level level, Editor *editor)
+bool IsPuzzleSolved(Level level)
 {
 	for (int tileY = 0; tileY < level.tileCountY; ++tileY)
 	{
@@ -439,19 +460,19 @@ bool IsPuzzleSolved(Level level, Editor *editor)
 		}
 	}
 
-	editor->violations.count = 0;
-	GetViolations(level, &editor->violations);
-	return editor->violations.count == 0;
+	return !HasViolations(level);
 }
 
-void Draw(Level level, Editor *editor)
+void Draw(Editor *editor)
 {
+	Level level = editor->level;
+
 	Color backgroundColor = COLOR_BACKGROUND;
 
 	if (editor->mode == MODE_PLAY)
 	{
 		backgroundColor = COLOR_BACKGROUND_PLAY;
-		if (IsPuzzleSolved(level, editor))
+		if (IsPuzzleSolved(editor->level))
 		{
 			backgroundColor = COLOR_BACKGROUND_PUZZLE_SOLVED;
 		}
@@ -686,22 +707,24 @@ bool TryLoadLevelFromString(const char *buffer, size_t bufferSize, Level *outLev
 	char *next_at;
 	level.tileCountX = strtol(at, &next_at, 10);
 	if (at == next_at) return false;
+	if (level.tileCountX > 2048) return false;
 	at = next_at;
 	EatWhitespace(&at, end);
 	level.tileCountY = strtol(at, &next_at, 10);
 	if (at == next_at) return false;
+	if (level.tileCountY > 2048) return false;
 	at = next_at;
-	EatWhitespace(&at, end);
-	if (at >= end) return false;
 
 	size_t allocAmount = sizeof(*level.tiles) * level.tileCountX * level.tileCountX;
-	level.tiles = (Tile *)malloc(allocAmount);
+	level.tiles = (Tile *)realloc(outLevel->tiles, allocAmount);
+	assert(level.tiles != NULL);
 	memset(level.tiles, 0, allocAmount);
 
 	for (int tileY = 0; tileY < level.tileCountY; ++tileY)
 	{
 		for (int tileX = 0; tileX < level.tileCountX; ++tileX)
 		{
+			EatWhitespace(&at, end);
 			if (at >= end) goto ErrorReturn;
 
 			char c = *at;
@@ -736,12 +759,11 @@ bool TryLoadLevelFromString(const char *buffer, size_t bufferSize, Level *outLev
 	return true;
 
 ErrorReturn:
-	free(level.tiles);
 	return false;
 }
 
 
-Level HandleInput(Level level, Editor *editor)
+void HandleInput(Editor *editor)
 {
 	// Zoom based on mouse wheel
 	float wheel = GetMouseWheelMove();
@@ -752,10 +774,11 @@ Level HandleInput(Level level, Editor *editor)
 	{
 		if (IsKeyPressed(KEY_C))
 		{
-			size_t bufferSize = GetSafeLevelStringSize(level);
+			size_t bufferSize = GetSafeLevelStringSize(editor->level);
 			char *buffer = malloc(bufferSize);
-			SaveLevelToString(level, buffer, bufferSize);
+			SaveLevelToString(editor->level, buffer, bufferSize);
 			SetClipboardText(buffer);
+			free(buffer);
 		}
 
 		if (IsKeyPressed(KEY_V))
@@ -763,9 +786,9 @@ Level HandleInput(Level level, Editor *editor)
 			const char *levelString = GetClipboardText();
 			int levelStringLength = strlen(levelString);
 
-			if (TryLoadLevelFromString(levelString, levelStringLength, &level))
+			if (TryLoadLevelFromString(levelString, levelStringLength, &editor->level))
 			{
-				UpdateLitTiles(level);
+				UpdateLitTiles(editor->level);
 			}
 		}
 	}
@@ -859,12 +882,12 @@ Level HandleInput(Level level, Editor *editor)
 					tile = CLITERAL(Tile){TILE_EMPTY};
 				}
 
-				PutTileLine(level, prevMouseTileX, prevMouseTileY, mouseTileX, mouseTileY, tile);
-				UpdateLitTiles(level);
+				PutTileLine(editor->level, prevMouseTileX, prevMouseTileY, mouseTileX, mouseTileY, tile);
+				UpdateLitTiles(editor->level);
 			}
 
 			Tile *tile = NULL;
-			if (TryGetTile(level, mouseTileX, mouseTileY, &tile))
+			if (TryGetTile(editor->level, mouseTileX, mouseTileY, &tile))
 			{
 				if (IsKeyPressed(KEY_ONE))              tile->lampRequirement = 1;
 				else if (IsKeyPressed(KEY_TWO))         tile->lampRequirement = 2;
@@ -879,7 +902,7 @@ Level HandleInput(Level level, Editor *editor)
 			if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
 			{
 				Tile *tile = NULL;
-				if (TryGetTile(level, mouseTileX, mouseTileY, &tile) && tile->kind != TILE_WALL)
+				if (TryGetTile(editor->level, mouseTileX, mouseTileY, &tile) && tile->kind != TILE_WALL)
 				{
 					TileKind tileKind = TILE_LAMP;
 					if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
@@ -888,14 +911,13 @@ Level HandleInput(Level level, Editor *editor)
 					}
 
 					tile->kind = tileKind;
-					UpdateLitTiles(level);
+					UpdateLitTiles(editor->level);
 				}
 			}
 		}
 	}
 
 	editor->previousMousePosition = mousePosition;
-	return level;
 }
 
 Vector2 GetViewportCenter()
@@ -918,10 +940,10 @@ void ReadjustViewport(Editor *editor)
 	}
 }
 
-Level Update(Level level, Editor *editor)
+void Update(Editor *editor)
 {
 	ReadjustViewport(editor);
-	return HandleInput(level, editor);
+	HandleInput(editor);
 }
 
 float GetLevelWidth(Level level)
@@ -934,48 +956,36 @@ float GetLevelHeight(Level level)
 	return level.tileCountY * TILE_SIZE;
 }
 
-Vector2 GetLevelDimensions(Level level)
-{
-	return CLITERAL(Vector2){
-		GetLevelWidth(level),
-		GetLevelHeight(level),
-	};
-}
-
 int main(void)
 {
-	Level level = {
-		.tileCountX = 8,
-		.tileCountY = 8,
-	};
-
-	Tile tiles[level.tileCountX * level.tileCountY];
-	memset(tiles, 0, sizeof(tiles));
-
-	level.tiles = tiles;
-
 	Editor editor = {
+		.level = {
+			.tileCountX = 10,
+			.tileCountY = 10,
+		},
 		.tileToDraw = {TILE_WALL, .lampRequirement = -1},
 		.camera = {
 			.zoom = 1.0f,
 		},
 	};
+	editor.level.tiles = (Tile *)calloc(editor.level.tileCountX * editor.level.tileCountY, sizeof(*editor.level.tiles));
 
 	InitWindow(1920, 1080, "Zenkari");
 	SetWindowState(FLAG_WINDOW_RESIZABLE);
+	SetTargetFPS(30);
 
 	editor.previousViewportCenter = GetViewportCenter();
 
 	editor.camera.offset = (Vector2){
-		0.5f*(GetRenderWidth() - GetLevelWidth(level)),
-		0.5f*(GetRenderHeight() - GetLevelHeight(level)),
+		0.5f*(GetRenderWidth() - GetLevelWidth(editor.level)),
+		0.5f*(GetRenderHeight() - GetLevelHeight(editor.level)),
 	};
 
 	while (!WindowShouldClose())
 	{
-		level = Update(level, &editor);
+		Update(&editor);
 		BeginDrawing();
-		Draw(level, &editor);
+		Draw(&editor);
 		EndDrawing();
 	}
 	return 0;
