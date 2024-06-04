@@ -478,7 +478,6 @@ void Draw(Editor *editor)
 		}
 	}
 
-
 	ClearBackground(backgroundColor);
 	BeginMode2D(editor->camera);
 	{
@@ -763,12 +762,62 @@ ErrorReturn:
 }
 
 
+float GetLevelWidth(Level level)
+{
+	return level.tileCountX * TILE_SIZE;
+}
+
+float GetLevelHeight(Level level)
+{
+	return level.tileCountY * TILE_SIZE;
+}
+
+Vector2 GetViewportCenter()
+{
+	return CLITERAL(Vector2)
+	{
+		GetRenderWidth() * 0.5f,
+		GetRenderHeight() * 0.5f,
+	};
+}
+
+void CenterView(Camera2D *camera, Level level)
+{
+	float levelWidth = GetLevelWidth(level);
+	float levelHeight = GetLevelHeight(level);
+
+	float widthRatio = GetRenderWidth() / levelWidth;
+	float heightRatio = GetRenderHeight() / levelHeight;
+
+	camera->zoom = widthRatio < heightRatio ? widthRatio : heightRatio;
+	camera->zoom *= 0.90;
+
+	camera->target = CLITERAL(Vector2)
+	{
+		0.5f*levelWidth,
+		0.5f*levelHeight,
+	};
+
+	camera->offset = GetViewportCenter();
+
+}
+
 void HandleInput(Editor *editor)
 {
 	// Zoom based on mouse wheel
 	float wheel = GetMouseWheelMove();
 	Vector2 mousePosition = GetMousePosition();
 	Vector2 mouseDifference = Vector2Subtract(mousePosition, editor->previousMousePosition);
+
+	if (IsKeyPressed(KEY_F11) || IsKeyDown(KEY_LEFT_ALT) && IsKeyPressed(KEY_ENTER))
+	{
+		ToggleFullscreen();
+	}
+
+	if (IsKeyPressed(KEY_F))
+	{
+		CenterView(&editor->camera, editor->level);
+	}
 
 	if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL))
 	{
@@ -920,15 +969,6 @@ void HandleInput(Editor *editor)
 	editor->previousMousePosition = mousePosition;
 }
 
-Vector2 GetViewportCenter()
-{
-	return CLITERAL(Vector2)
-	{
-		GetRenderWidth() * 0.5f,
-		GetRenderHeight() * 0.5f,
-	};
-}
-
 void ReadjustViewport(Editor *editor)
 {
 	if (IsWindowResized())
@@ -944,16 +984,6 @@ void Update(Editor *editor)
 {
 	ReadjustViewport(editor);
 	HandleInput(editor);
-}
-
-float GetLevelWidth(Level level)
-{
-	return level.tileCountX * TILE_SIZE;
-}
-
-float GetLevelHeight(Level level)
-{
-	return level.tileCountY * TILE_SIZE;
 }
 
 int main(void)
@@ -976,10 +1006,7 @@ int main(void)
 
 	editor.previousViewportCenter = GetViewportCenter();
 
-	editor.camera.offset = (Vector2){
-		0.5f*(GetRenderWidth() - GetLevelWidth(editor.level)),
-		0.5f*(GetRenderHeight() - GetLevelHeight(editor.level)),
-	};
+	CenterView(&editor.camera, editor.level);
 
 	while (!WindowShouldClose())
 	{
