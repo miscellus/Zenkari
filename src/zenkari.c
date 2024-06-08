@@ -9,6 +9,13 @@
 
 #define TILE_SIZE 64
 
+#define COLOR_WALL (CLITERAL(Color){0x45, 0x56, 0x60, 0xff})
+#define COLOR_LAMP (CLITERAL(Color){0xcc, 0xee, 0x30, 0xff})
+#define COLOR_LIT (CLITERAL(Color){251, 241, 218, 255})
+#define COLOR_BACKGROUND (CLITERAL(Color){0xe0, 0xe0, 0xe5, 0xff})
+#define COLOR_BACKGROUND_PLAY (CLITERAL(Color){0xe0, 0xf5, 0xf0, 0xff})
+#define COLOR_BACKGROUND_PUZZLE_SOLVED (CLITERAL(Color){0xf5, 0xf5, 0xa3, 0xFF})
+
 typedef enum TileKind
 {
 	TILE_EMPTY,
@@ -76,13 +83,6 @@ typedef struct Editor
 
 	bool showDebugText;
 } Editor;
-
-#define COLOR_WALL (CLITERAL(Color){0x45, 0x56, 0x60, 0xff})
-#define COLOR_LAMP (CLITERAL(Color){0xcc, 0xee, 0x30, 0xff})
-#define COLOR_LIT (CLITERAL(Color){251, 241, 218, 255})
-#define COLOR_BACKGROUND (CLITERAL(Color){0xe0, 0xe0, 0xe5, 0xff})
-#define COLOR_BACKGROUND_PLAY (CLITERAL(Color){0xe0, 0xf5, 0xf0, 0xff})
-#define COLOR_BACKGROUND_PUZZLE_SOLVED (CLITERAL(Color){0xf5, 0xf5, 0xa3, 0xFF})
 
 void DrawTileGridLines(int tileCountX, int tileCountY)
 {
@@ -910,9 +910,6 @@ void HandleInput(Editor *editor)
 		{
 			zoomTarget = editor->zoomTarget;
 			zoomFactor = 3.0*mouseDifference.x / GetRenderWidth();
-
-			// editor->previousMousePosition = Vector2Add(editor->previousMousePosition, Vector2Subtract(editor->zoomTarget, mousePosition));
-			// SetMousePosition(editor->zoomTarget.x, editor->zoomTarget.y);
 		}
 
 		CameraSetZoomTarget(&editor->camera, zoomTarget);
