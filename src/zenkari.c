@@ -71,6 +71,10 @@ typedef struct Editor
 	float previousZoom;
 
 	Violations violations;
+
+	Font font;
+
+	bool showDebugText;
 } Editor;
 
 #define COLOR_WALL (CLITERAL(Color){0x45, 0x56, 0x60, 0xff})
@@ -103,7 +107,7 @@ int Modulo(int n, int m)
 	return ((n % m) + m) % m;
 }
 
-void DrawTileWithAlpha(Tile tile, int tileX, int tileY, float alpha)
+void DrawTileWithAlpha(Tile tile, int tileX, int tileY, Font font, float alpha)
 {
 	Color color;
 	switch (tile.kind)
@@ -116,25 +120,28 @@ void DrawTileWithAlpha(Tile tile, int tileX, int tileY, float alpha)
 			break;
 	}
 
-	float x = tileX * TILE_SIZE;
-	float y = tileY * TILE_SIZE;
-	DrawRectangle(x, y, TILE_SIZE, TILE_SIZE, ColorAlpha(color, alpha));
+	Vector2 tileCorner = {
+		tileX * TILE_SIZE,
+		tileY * TILE_SIZE,
+	};
+	DrawRectangle(tileCorner.x, tileCorner.y, TILE_SIZE, TILE_SIZE, ColorAlpha(color, alpha));
 
 	if (tile.kind == TILE_WALL && tile.lampRequirement >= 0)
 	{
+		Vector2 tileDim = {TILE_SIZE, TILE_SIZE};
+		Vector2 tileCenter = Vector2Add(tileCorner, Vector2Scale(tileDim, 0.5f));
 		char lampCountText[12] = {0};
 		snprintf(lampCountText, sizeof(lampCountText), "%d", tile.lampRequirement);
-		int fontSize = TILE_SIZE / 2;
-		int textLength = MeasureText(lampCountText, fontSize);
-		x += (TILE_SIZE/2.0f - textLength/2.0f);
-		y += (TILE_SIZE/2.0f - fontSize/2.0f);
-		DrawText(lampCountText, x, y, fontSize, WHITE);
+		float fontSize = TILE_SIZE * 0.61803398875f;
+		Vector2 textDimensions = MeasureTextEx(font, lampCountText, fontSize, 0);
+		Vector2 textCorner = Vector2Subtract(tileCenter, Vector2Scale(textDimensions, 0.5f));
+		DrawTextEx(font, lampCountText, textCorner, fontSize, 0, WHITE);
 	}
 }
 
-void DrawTile(Tile tile, int tileX, int tileY)
+void DrawTile(Tile tile, int tileX, int tileY, Font font)
 {
-	DrawTileWithAlpha(tile, tileX, tileY, 1.0f);
+	DrawTileWithAlpha(tile, tileX, tileY, font, 1.0f);
 }
 
 bool IsTileInLevel(Level level, int tileX, int tileY)
@@ -149,14 +156,14 @@ int GetTileIndex(Level level, int tileX, int tileY)
 	return tileX + tileY * level.tileCountX;
 }
 
-void DrawTileGrid(Level level)
+void DrawTileGrid(Level level, Font font)
 {
 	for (int tileY = 0; tileY < level.tileCountY; ++tileY)
 	{
 		for (int tileX = 0; tileX < level.tileCountX; ++tileX)
 		{
 			Tile tile = level.tiles[GetTileIndex(level, tileX, tileY)];
-			DrawTile(tile, tileX, tileY);
+			DrawTile(tile, tileX, tileY, font);
 		}
 	}
 }
@@ -215,7 +222,7 @@ void DrawTileCursor(Editor *editor)
 	}
 	else
 	{
-		DrawTileWithAlpha(editor->tileToDraw, mouseTileX, mouseTileY, 0.4f);
+		DrawTileWithAlpha(editor->tileToDraw, mouseTileX, mouseTileY, editor->font, 0.4f);
 		DrawTileOutline(tilePosition.x, tilePosition.y, 4, ColorAlpha(WHITE, 0.5f));
 	}
 }
@@ -406,15 +413,15 @@ bool GetLampLitByOtherLampViolations(Level level, Violations *violations)
 
 bool GetViolations(Level level, Violations *violations)
 {
+	bool foundViolation = false;
+
 	// For all wall tiles,
 	//   if lamp requirement, check neighbor tiles for correct amount of lamps
-	bool foundViolation = false;
 	foundViolation |= GetLampRequirementViolations(level, violations);
 	
 	// For all lamp tiles,
 	//   Check that they are not lit by another lamp
 	foundViolation |= GetLampLitByOtherLampViolations(level, violations);
-
 
 	// If any ground tiles are not lit,
 	//   We have not completed the puzzle
@@ -463,6 +470,29 @@ bool IsPuzzleSolved(Level level)
 	return !HasViolations(level);
 }
 
+void DrawDebugInfo(Editor *editor)
+{
+	Rectangle debugTextBounds = {
+		0.0f,
+		0.0f,
+		400.0f,
+		GetRenderHeight(),
+	};
+	DrawRectangleRec(debugTextBounds, (Color){255,255,255,160});
+	float fontSize = 24.0f;
+	float fontSpacing = 1.0f;
+	float pad = 20.0f;
+	Vector2 textPos = {pad, pad};
+	const char *text = TextFormat("Zoom: %d%%", (int)(editor->camera.zoom*100.0f));
+	Vector2 textDimensions = MeasureTextEx(editor->font, text, fontSize, fontSpacing);
+	DrawTextEx(editor->font, text, textPos, fontSize, fontSpacing, BLACK);
+	textPos.y += textDimensions.y * 1.618034f;
+	int mouseTileX, mouseTileY;
+	GetMouseTile(editor->camera, &mouseTileX, &mouseTileY);
+	text = TextFormat("Cursor Position: (%d, %d)", mouseTileX, mouseTileY);
+	DrawTextEx(editor->font, text, textPos, fontSize, fontSpacing, BLACK);
+}
+
 void Draw(Editor *editor)
 {
 	Level level = editor->level;
@@ -483,7 +513,7 @@ void Draw(Editor *editor)
 	{
 		DrawRectangle(0, 0, level.tileCountX*TILE_SIZE, level.tileCountY*TILE_SIZE, WHITE);
 		DrawTileGridLines(level.tileCountX, level.tileCountY);
-		DrawTileGrid(level);
+		DrawTileGrid(level, editor->font);
 		DrawTileCursor(editor);
 	
 		editor->violations.count = 0;
@@ -494,13 +524,10 @@ void Draw(Editor *editor)
 	}
 	EndMode2D();
 
-	DrawText(TextFormat("Zoom: %d%%", (int)(editor->camera.zoom*100.0f)), 10, 10, 20.0f, BLACK);
-
-#if DRAW_DEBUG_TEXT
-	int mouseTileX, mouseTileY;
-	GetMouseTile(editor->camera, &mouseTileX, &mouseTileY);
-	DrawText(TextFormat("Cursor Position: (%d, %d)", mouseTileX, mouseTileY), 10, 80, 20.0f, BLACK);
-#endif
+	if (editor->showDebugText)
+	{
+		DrawDebugInfo(editor);
+	}
 }
 
 void PutTileLine(Level level, int xStart, int yStart, int xEnd, int yEnd, Tile tile)
@@ -809,9 +836,16 @@ void HandleInput(Editor *editor)
 	Vector2 mousePosition = GetMousePosition();
 	Vector2 mouseDifference = Vector2Subtract(mousePosition, editor->previousMousePosition);
 
-	if (IsKeyPressed(KEY_F11) || IsKeyDown(KEY_LEFT_ALT) && IsKeyPressed(KEY_ENTER))
+	if (IsKeyPressed(KEY_F11) || (IsKeyDown(KEY_LEFT_ALT) && IsKeyPressed(KEY_ENTER)))
 	{
+		int monitor = GetCurrentMonitor();
+        SetWindowSize(GetMonitorWidth(monitor), GetMonitorHeight(monitor));
 		ToggleFullscreen();
+	}
+
+	if (IsKeyPressed(KEY_F1))
+	{
+		editor->showDebugText ^= 1;
 	}
 
 	if (IsKeyPressed(KEY_F))
@@ -986,9 +1020,13 @@ void Update(Editor *editor)
 	HandleInput(editor);
 }
 
-int main(void)
+void Init(Editor *editor)
 {
-	Editor editor = {
+	InitWindow(1920, 1080, "Zenkari");
+	SetWindowState(FLAG_WINDOW_RESIZABLE);
+	SetTargetFPS(30);
+
+	*editor = CLITERAL(Editor){
 		.level = {
 			.tileCountX = 10,
 			.tileCountY = 10,
@@ -998,15 +1036,26 @@ int main(void)
 			.zoom = 1.0f,
 		},
 	};
-	editor.level.tiles = (Tile *)calloc(editor.level.tileCountX * editor.level.tileCountY, sizeof(*editor.level.tiles));
 
-	InitWindow(1920, 1080, "Zenkari");
-	SetWindowState(FLAG_WINDOW_RESIZABLE);
-	SetTargetFPS(30);
+	Level *level = &editor->level;
+	level->tiles = (Tile *)calloc(level->tileCountX * level->tileCountY, sizeof(*level->tiles));
 
-	editor.previousViewportCenter = GetViewportCenter();
 
-	CenterView(&editor.camera, editor.level);
+	editor->previousViewportCenter = GetViewportCenter();
+
+	CenterView(&editor->camera, editor->level);
+
+	const char *fontPath = "assets/oswald.ttf";
+	editor->font = LoadFontEx(fontPath, 256, NULL, 0);
+	GenTextureMipmaps(&editor->font.texture);
+	SetTextureFilter(editor->font.texture, TEXTURE_FILTER_TRILINEAR);
+	SetTextureWrap(editor->font.texture, TEXTURE_WRAP_CLAMP);
+}
+
+int main(void)
+{
+	Editor editor;
+	Init(&editor);
 
 	while (!WindowShouldClose())
 	{
